@@ -1,9 +1,7 @@
 package org.keedio.flume.source;
 
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
+import java.text.SimpleDateFormat;
+import java.util.*;
 
 import org.hibernate.CacheMode;
 import org.hibernate.Query;
@@ -33,6 +31,11 @@ public class HibernateHelper {
 	private ServiceRegistry serviceRegistry;
 	private Configuration config;
 	private SQLSourceHelper sqlSourceHelper;
+	private String maxSql;
+	private String maxtime;
+	private String ts;
+	private SimpleDateFormat dateFormat;
+	private Date date;
 
 	/**
 	 * Constructor to initialize hibernate configuration parameters
@@ -50,6 +53,7 @@ public class HibernateHelper {
 		Iterator<Map.Entry<String,String>> it = hibernateProperties.entrySet().iterator();
 		
 		config = new Configuration();
+		dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 		Map.Entry<String, String> e;
 		
 		while (it.hasNext()){
@@ -102,36 +106,61 @@ public class HibernateHelper {
 		if (!session.isConnected()){
 			resetConnection();
 		}
-				
-		if (sqlSourceHelper.isCustomQuerySet()){
-			
-			query = session.createSQLQuery(sqlSourceHelper.buildQuery());
-			
-			if (sqlSourceHelper.getMaxRows() != 0){
-				query = query.setMaxResults(sqlSourceHelper.getMaxRows());
-			}			
-		}
-		else
-		{
-			query = session
-					.createSQLQuery(sqlSourceHelper.getQuery())
-					.setFirstResult(Integer.parseInt(sqlSourceHelper.getCurrentIndex()));
-			
-			if (sqlSourceHelper.getMaxRows() != 0){
-				query = query.setMaxResults(sqlSourceHelper.getMaxRows());
+
+		//判断是否是配置增量更新的时间字段，有的话就按照时间增量更新，否则走原来的逻辑
+		if (sqlSourceHelper.isIncrementalQuery()){
+			maxSql = sqlSourceHelper.maxQuery();
+//			LOG.info("sql:"+maxSql);
+			List<List<Object>> max = session.createSQLQuery(maxSql).setResultTransformer(Transformers.TO_LIST).list();
+			maxtime = max.get(0).get(0).toString().substring(0,19);
+			try {
+				date = dateFormat.parse(maxtime);
+				ts = String.valueOf(date.getTime() / 1000);
+				query = session.createSQLQuery(sqlSourceHelper.buildQuery(ts));
+				if (sqlSourceHelper.getMaxRows() != 0){
+					query = query.setMaxResults(sqlSourceHelper.getMaxRows());
+				}
+				rowsList = query.setFetchSize(sqlSourceHelper.getMaxRows()).setResultTransformer(Transformers.TO_LIST).list();
+//				LOG.info("Current time is "+sqlSourceHelper.getCurrentIndex()+",and lasttime is " + ts);
+//				LOG.info("Records count: "+rowsList.size());
+			}catch (Exception e){
+				LOG.error("Exception thrown, resetting connection.",e);
+				resetConnection();
 			}
-		}
-		
-		try {
-			rowsList = query.setFetchSize(sqlSourceHelper.getMaxRows()).setResultTransformer(Transformers.TO_LIST).list();
-		}catch (Exception e){
-			LOG.error("Exception thrown, resetting connection.",e);
-			resetConnection();
-		}
-		
-		if (!rowsList.isEmpty()){
-			sqlSourceHelper.setCurrentIndex(Integer.toString((Integer.parseInt(sqlSourceHelper.getCurrentIndex())
-					+ rowsList.size())));
+			if (!rowsList.isEmpty()){
+				sqlSourceHelper.setCurrentIndex(ts);
+			}
+		//原有的逻辑
+		} else {
+			if (sqlSourceHelper.isCustomQuerySet()) {
+					query = session.createSQLQuery(sqlSourceHelper.buildQuery());
+
+				if (sqlSourceHelper.getMaxRows() != 0){
+					query = query.setMaxResults(sqlSourceHelper.getMaxRows());
+				}
+			}
+			else
+			{
+				query = session
+						.createSQLQuery(sqlSourceHelper.getQuery())
+						.setFirstResult(Integer.parseInt(sqlSourceHelper.getCurrentIndex()));
+
+				if (sqlSourceHelper.getMaxRows() != 0){
+					query = query.setMaxResults(sqlSourceHelper.getMaxRows());
+				}
+			}
+
+			try {
+				rowsList = query.setFetchSize(sqlSourceHelper.getMaxRows()).setResultTransformer(Transformers.TO_LIST).list();
+			}catch (Exception e){
+				LOG.error("Exception thrown, resetting connection.",e);
+				resetConnection();
+			}
+
+			if (!rowsList.isEmpty()){
+				sqlSourceHelper.setCurrentIndex(Integer.toString((Integer.parseInt(sqlSourceHelper.getCurrentIndex())
+						+ rowsList.size())));
+			}
 		}
 		
 		return rowsList;

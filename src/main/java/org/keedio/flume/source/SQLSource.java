@@ -186,5 +186,7 @@ public class SQLSource extends AbstractSource implements Configurable, PollableS
         public void close() throws IOException {
             flush();
         }
+
+
     }
 }

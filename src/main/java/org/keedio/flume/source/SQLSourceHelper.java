@@ -45,7 +45,7 @@ public class SQLSourceHelper {
 
   private File file, directory;
   private int runQueryDelay, batchSize, maxRows;
-  private String startFrom, currentIndex;
+  private String startFrom, currentIndex, updateTime, increSql;
   private String statusFilePath, statusFileName, connectionURL, table,
     columnsToSelect, customQuery, query, sourceName, delimiterEntry, connectionUserName, connectionPassword,
 		defaultCharsetResultSet;
@@ -88,6 +88,7 @@ public class SQLSourceHelper {
     statusFileName = context.getString("status.file.name");
     table = context.getString("table");
     columnsToSelect = context.getString("columns.to.select", "*");
+    updateTime = context.getString("incremental.column");
     runQueryDelay = context.getInteger("run.query.delay", DEFAULT_QUERY_DELAY);
     directory = new File(statusFilePath);
     customQuery = context.getString("custom.query");
@@ -387,5 +388,37 @@ public class SQLSourceHelper {
 
   public String getDefaultCharsetResultSet() {
     return defaultCharsetResultSet;
+  }
+
+  //判断是否配置增量字段
+  boolean isIncrementalQuery() {
+    return (updateTime != null);
+  }
+
+  //增加取数据库最大值的代码
+  public String maxQuery() {
+    return "SELECT max(" + updateTime + ") FROM " + table;
+  }
+
+  //增量查询mysql语句
+  //oracle的话改下FROM_UNIXTIME转换的函数为to_date('" + currentIndex + "','yyyy-mm-dd hh24:mi:ss')
+  //to_date('" + maxTime + "','yyyy-mm-dd hh24:mi:ss')
+  public String buildQuery(String maxTime) {
+
+    if (customQuery == null && updateTime != null) {
+      increSql = "SELECT " + columnsToSelect + " FROM " + table + " " +
+              "WHERE "+ updateTime + ">=FROM_UNIXTIME('" + currentIndex + "','%Y-%m-%d %H:%i:%s') AND " + updateTime + "<FROM_UNIXTIME('" + maxTime + "','%Y-%m-%d %H:%i:%s') " +
+              "order by "+updateTime+" asc";
+//      LOG.info("increSql:" + increSql);
+      return increSql;
+    } else if (customQuery == null && updateTime == null) {
+      return "SELECT " + columnsToSelect + " FROM " + table;
+    } else {
+      if (customQuery.contains("$@$")) {
+        return customQuery.replace("$@$", currentIndex) ;
+      } else {
+        return customQuery ;
+      }
+    }
   }
 }
