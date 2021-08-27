@@ -405,17 +405,15 @@ public class SQLSourceHelper {
   //to_date('" + maxTime + "','yyyy-mm-dd hh24:mi:ss')
   public String buildQuery(String maxTime) {
 
-    if (customQuery == null && updateTime != null) {
+    if (customQuery == null) {
       increSql = "SELECT " + columnsToSelect + " FROM " + table + " " +
               "WHERE "+ updateTime + ">=FROM_UNIXTIME('" + currentIndex + "','%Y-%m-%d %H:%i:%s') AND " + updateTime + "<FROM_UNIXTIME('" + maxTime + "','%Y-%m-%d %H:%i:%s') " +
               "order by "+updateTime+" asc";
 //      LOG.info("increSql:" + increSql);
       return increSql;
-    } else if (customQuery == null && updateTime == null) {
-      return "SELECT " + columnsToSelect + " FROM " + table;
     } else {
-      if (customQuery.contains("$@$")) {
-        return customQuery.replace("$@$", currentIndex) ;
+      if (customQuery.contains("$@$") && customQuery.contains("$#$")) {
+        return customQuery.replace("$@$", currentIndex).replace("$#$", maxTime);
       } else {
         return customQuery ;
       }
